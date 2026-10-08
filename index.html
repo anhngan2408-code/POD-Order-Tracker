@@ -60,10 +60,40 @@ td.history-actions{position:relative;width:70px;text-align:center}.history-menu-
 .congrats-icon{font-size:58px}.congrats-title{font-size:29px;color:#f4c65f;font-weight:bold;margin:8px}.congrats-text{color:#e6d4bd;line-height:1.6}.close{margin-top:17px;background:#bd681d;color:white}
 @media(max-width:900px){.layout{grid-template-columns:1fr}.order-row{grid-template-columns:1fr 1fr 1.5fr 1fr}.milestone-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){h1{font-size:35px}.order-row,.milestone-grid{grid-template-columns:1fr}.layout{display:block}}
+
+#authScreen,#registerScreen{position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at top,#2b1d13,#100b08 65%);padding:20px}
+.auth-card{width:min(410px,94vw);background:linear-gradient(145deg,#271b12,#1a110c);border:1px solid #765332;border-radius:20px;padding:30px;box-shadow:0 25px 80px #000;text-align:center}
+.auth-brand{color:#e0a24c;letter-spacing:5px;font-size:12px;font-weight:bold}.auth-card h2{font:700 31px Georgia,serif;color:#f4dfad;margin:12px 0 8px}.auth-sub{color:#bda98f;font-size:14px;margin:0 0 20px}.auth-card input{margin-bottom:10px}.auth-btn{width:100%;margin-top:5px;background:#bd681d;color:#fff;padding:12px;border:0;border-radius:8px;cursor:pointer;font-weight:bold}.auth-btn:hover{background:#d67d28}.auth-link{margin-top:14px;background:transparent!important;border:0!important;color:#e0a24c!important;cursor:pointer;font-size:13px}.auth-error{min-height:20px;color:#ef9a9a;font-size:13px;margin-bottom:8px}.userbar{position:fixed;right:18px;top:14px;z-index:1000;display:flex;gap:8px;align-items:center;background:#1b120d;border:1px solid #765332;border-radius:10px;padding:7px 9px;font-size:12px;color:#d8c5ad}.logout-btn{background:#733436!important;color:#fff!important;border:0!important;border-radius:6px!important;padding:7px 9px!important;cursor:pointer}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<div class="userbar" id="userbar" style="display:none"><span id="userEmail"></span><button class="logout-btn" onclick="logout()">Đăng xuất</button></div>
+
+<div id="authScreen">
+  <div class="auth-card">
+    <div class="auth-brand">POD BUSINESS</div>
+    <h2>🔐 ĐĂNG NHẬP</h2>
+    <p class="auth-sub">Đăng nhập để truy cập POD Order Tracker</p>
+    <div id="authError" class="auth-error"></div>
+    <input id="authEmail" type="email" placeholder="Email">
+    <input id="authPassword" type="password" placeholder="Mật khẩu">
+    <button class="auth-btn" onclick="login()">🔓 ĐĂNG NHẬP</button>
+    <button class="auth-link" onclick="showRegister()">Chưa có tài khoản? Đăng ký</button>
+  </div>
+</div>
+<div id="registerScreen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-brand">POD BUSINESS</div>
+    <h2>📝 ĐĂNG KÝ</h2>
+    <p class="auth-sub">Tạo tài khoản riêng cho tracker của bạn</p>
+    <div id="registerError" class="auth-error"></div>
+    <input id="regEmail" type="email" placeholder="Email">
+    <input id="regPassword" type="password" placeholder="Mật khẩu (tối thiểu 6 ký tự)">
+    <button class="auth-btn" onclick="register()">✨ TẠO TÀI KHOẢN</button>
+    <button class="auth-link" onclick="showLogin()">← Quay lại đăng nhập</button>
+  </div>
+</div>
 <div id="fireworks"></div>
 <div id="congrats">
   <div class="congrats-icon">🎉🏆🎆</div>
@@ -77,7 +107,6 @@ td.history-actions{position:relative;width:70px;text-align:center}.history-menu-
   <div class="small-title">POD BUSINESS</div>
   <h1>GOAL &amp; REWARD</h1>
   <div class="subtitle">Cày đơn hôm nay — Tự do ngày mai!</div>
-  <div id="syncStatus" style="margin-top:10px;font-size:12px;color:#a99682">☁️ Đang chuẩn bị đồng bộ...</div>
 </header>
 
 <div class="layout">
@@ -143,245 +172,114 @@ td.history-actions{position:relative;width:70px;text-align:center}.history-menu-
 </div>
 
 <script>
-const KEY="pod_goal_reward_v4";
 const SUPABASE_URL="https://lysxtijjggnsmmmdzuzu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY="sb_publishable_qIj58se_VIxC29LuAtHMoA_QLId52D4";
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
-let remoteLoaded=false;
-let saveTimer=null;
-let data=JSON.parse(localStorage.getItem(KEY)||'{"orders":{},"goals":[],"note":""}');
-if(!data.orders)data.orders={}; if(!data.goals)data.goals=[];
-
-function setSyncStatus(text,color="#a99682"){
- const el=document.getElementById("syncStatus");
- if(el){el.textContent=text;el.style.color=color;}
-}
-
-function hasMeaningfulLocalData(){
- return Object.keys(data.orders||{}).length>0 || (data.goals||[]).length>0 || !!String(data.note||"").trim();
-}
-
-async function loadRemote(){
- try{
-   setSyncStatus("☁️ Đang tải dữ liệu từ database...");
-   const {data:rows,error}=await supabaseClient
-     .from("app_notes")
-     .select("id,content")
-     .eq("id",1)
-     .maybeSingle();
-   if(error)throw error;
-   if(rows && rows.content){
-     let remoteData=null;
-     try{remoteData=typeof rows.content==="string"?JSON.parse(rows.content):rows.content;}catch(e){remoteData=null;}
-     if(remoteData && typeof remoteData==="object"){
-       data=remoteData;
-       if(!data.orders)data.orders={};
-       if(!Array.isArray(data.goals))data.goals=[];
-       localStorage.setItem(KEY,JSON.stringify(data));
-       setSyncStatus("☁️ Đã đồng bộ dữ liệu", "#8fd694");
-     }
-   }else if(hasMeaningfulLocalData()){
-     await saveRemote(true);
-     setSyncStatus("☁️ Đã đưa dữ liệu hiện có lên database", "#8fd694");
-   }else{
-     await saveRemote(true);
-     setSyncStatus("☁️ Database đã sẵn sàng", "#8fd694");
-   }
-   remoteLoaded=true;
-   render();
- }catch(err){
-   console.error("Supabase load error:",err);
-   setSyncStatus("⚠️ Không kết nối được database — vẫn lưu trên máy", "#e7a56c");
-   remoteLoaded=false;
- }
-}
-
-async function saveRemote(immediate=false){
- if(!remoteLoaded && !immediate)return;
- try{
-   const payload={id:1,content:JSON.stringify(data),updated_at:new Date().toISOString()};
-   const {error}=await supabaseClient.from("app_notes").upsert(payload,{onConflict:"id"});
-   if(error)throw error;
-   setSyncStatus("☁️ Đã lưu database", "#8fd694");
- }catch(err){
-   console.error("Supabase save error:",err);
-   setSyncStatus("⚠️ Lưu database lỗi — dữ liệu vẫn còn trên máy", "#e7a56c");
- }
-}
-
-function scheduleRemoteSave(){
- if(!remoteLoaded)return;
- clearTimeout(saveTimer);
- setSyncStatus("☁️ Đang lưu...");
- saveTimer=setTimeout(()=>saveRemote(false),600);
-}
-
+const KEY="pod_goal_reward_v4";
+let data={orders:{},milestones:[],note:""};
+let currentUser=null;
 const defaultMilestones=[
- [25,"🍕","Một bữa ăn / tự thưởng nhỏ"],
- [50,"✈️","1 chuyến đi / 1 ngày nghỉ"],
- [100,"🖥️","Nâng cấp góc làm việc"],
- [150,"📱","Một món công nghệ muốn mua"],
- [200,"💵","Rút $500–1,000 tiêu cho bản thân"],
- [300,"🏦","Bắt đầu quỹ lớn — $2,000+"],
- [500,"🚙","Quỹ xe lớn — $5,000+"],
- [1000,"🚙","Quỹ xe lớn — $10,000+"],
- [2000,"🏆","Mục tiêu lớn: nâng cấp xe / khoản tiền lớn"]
+ [25,"🍕","Một bữa ăn / tự thưởng nhỏ"],[50,"✈️","1 chuyến đi / 1 ngày nghỉ"],[100,"🖥️","Nâng cấp góc làm việc"],[150,"📱","Một món công nghệ muốn mua"],[200,"💵","Rút $500–1,000 tiêu cho bản thân"],[300,"🏦","Bắt đầu quỹ lớn — $2,000+"],[500,"🚙","Quỹ xe lớn — $5,000+"],[1000,"🚙","Quỹ xe lớn — $10,000+"],[2000,"🏆","Mục tiêu lớn: nâng cấp xe / khoản tiền lớn"]
 ];
-
-// Chuyển các mốc mặc định + mục tiêu cũ thành một danh sách duy nhất
-if(!Array.isArray(data.milestones)){
- data.milestones=defaultMilestones.map((x,i)=>({id:"m"+i,orders:x[0],icon:x[1],name:x[2]}));
- if(Array.isArray(data.goals)){
-   data.goals.forEach((g,i)=>data.milestones.push({id:g.id||("g"+Date.now()+i),orders:Number(g.orders),icon:g.icon||"🎯",name:g.name||"Mục tiêu"}));
- }
-}
-if(!Array.isArray(data.milestones))data.milestones=[];
-
-const icons={
-"mục tiêu":"🎯","tiền":"💰","dollar":"💵","nhẫn":"💍","kim cương":"💎","vàng":"🥇","bạc":"🥈",
-"xe":"🚗","ô tô":"🚗","xe hơi":"🚘","motor":"🏍️","xe máy":"🏍️","nhà":"🏠","biệt thự":"🏡",
-"du lịch":"✈️","máy bay":"✈️","điện thoại":"📱","iphone":"📱","ipad":"📱","laptop":"💻","máy tính":"💻",
-"pc":"🖥️","màn hình":"🖥️","ghế":"💺","bàn":"🪑","đồng hồ":"⌚","quà":"🎁","ăn":"🍕","đồ ăn":"🍔",
-"cafe":"☕","game":"🎮","ps5":"🎮","camera":"📷","youtube":"▶️","facebook":"📘","tiktok":"🎵",
-"công việc":"💼","kinh doanh":"📈","shop":"🛍️","cửa hàng":"🏪","tự do":"🕊️","nghỉ":"🏖️",
-"biển":"🌊","núi":"⛰️","gym":"🏋️","chạy":"🏃","sách":"📚","học":"🎓","tốt nghiệp":"🎓",
-"ngôi sao":"⭐","lửa":"🔥","cúp":"🏆","huy chương":"🏅","vương miện":"👑","thời gian":"⏰",
-"tiết kiệm":"🏦","chìa khóa":"🔑","cưới":"💍","em bé":"👶","gia đình":"👨‍👩‍👦","tình yêu":"❤️",
-"chó":"🐶","mèo":"🐱","âm nhạc":"🎵","guitar":"🎸","phim":"🎬","party":"🎉","sinh nhật":"🎂",
-"noel":"🎄","christmas":"🎄","halloween":"🎃","mục tiêu lớn":"🏆","túi xách":"👜","giày":"👟",
-"quần áo":"👕","mỹ phẩm":"💄","nhẫn cưới":"💍","thuyền":"🚤","du thuyền":"🛥️","máy bay riêng":"🛩️"
-};
-
-function save(){localStorage.setItem(KEY,JSON.stringify(data));scheduleRemoteSave();}
-function total(){return Object.values(data.orders).reduce((a,b)=>a+Number(b),0);}
+const icons={"mục tiêu":"🎯","tiền":"💰","dollar":"💵","nhẫn":"💍","kim cương":"💎","vàng":"🥇","bạc":"🥈","xe":"🚗","ô tô":"🚗","xe hơi":"🚘","motor":"🏍️","xe máy":"🏍️","nhà":"🏠","biệt thự":"🏡","du lịch":"✈️","máy bay":"✈️","điện thoại":"📱","iphone":"📱","ipad":"📱","laptop":"💻","máy tính":"💻","pc":"🖥️","màn hình":"🖥️","ghế":"💺","bàn":"🪑","đồng hồ":"⌚","quà":"🎁","ăn":"🍕","đồ ăn":"🍔","cafe":"☕","game":"🎮","ps5":"🎮","camera":"📷","youtube":"▶️","facebook":"📘","tiktok":"🎵","công việc":"💼","kinh doanh":"📈","shop":"🛍️","cửa hàng":"🏪","tự do":"🕊️","nghỉ":"🏖️","biển":"🌊","núi":"⛰️","gym":"🏋️","chạy":"🏃","sách":"📚","học":"🎓","tốt nghiệp":"🎓","ngôi sao":"⭐","lửa":"🔥","cúp":"🏆","huy chương":"🏅","vương miện":"👑","thời gian":"⏰","tiết kiệm":"🏦","chìa khóa":"🔑","cưới":"💍","em bé":"👶","gia đình":"👨‍👩‍👦","tình yêu":"❤️","chó":"🐶","mèo":"🐱","âm nhạc":"🎵","guitar":"🎸","phim":"🎬","party":"🎉","sinh nhật":"🎂","noel":"🎄","christmas":"🎄","halloween":"🎃","mục tiêu lớn":"🏆","túi xách":"👜","giày":"👟","quần áo":"👕","mỹ phẩm":"💄","nhẫn cưới":"💍","thuyền":"🚤","du thuyền":"🛥️","máy bay riêng":"🛩️"};
+function localLoad(){try{return JSON.parse(localStorage.getItem(KEY)||'{"orders":{},"milestones":[],"note":""}')}catch{return {orders:{},milestones:[],note:""}}}
+function localSave(){localStorage.setItem(KEY,JSON.stringify(data));}
 function pad(n){return String(n).padStart(2,"0")}
+function total(){return Object.values(data.orders||{}).reduce((a,b)=>a+Number(b),0)}
 function dateKey(){return `${document.getElementById("year").value}-${pad(document.getElementById("month").value)}-${pad(document.getElementById("day").value)}`}
-
-function setupDates(){
- const now=new Date(), d=document.getElementById("day"),m=document.getElementById("month"),y=document.getElementById("year");
- for(let i=1;i<=31;i++)d.innerHTML+=`<option value="${i}">${i}</option>`;
- for(let i=1;i<=12;i++)m.innerHTML+=`<option value="${i}">${i}</option>`;
- for(let i=2020;i<=2040;i++)y.innerHTML+=`<option value="${i}">${i}</option>`;
- d.value=now.getDate();m.value=now.getMonth()+1;y.value=now.getFullYear();
+function defaultObjects(){return defaultMilestones.map((x,i)=>({id:null,orders:x[0],icon:x[1],name:x[2],isDefault:true}))}
+function showAuth(which){document.getElementById("authScreen").style.display=which==="login"?"flex":"none";document.getElementById("registerScreen").style.display=which==="register"?"flex":"none"}
+function showLogin(){document.getElementById("registerError").textContent="";showAuth("login")}
+function showRegister(){document.getElementById("authError").textContent="";showAuth("register")}
+function authMsg(el,msg){document.getElementById(el).textContent=msg||""}
+async function register(){
+ const email=document.getElementById("regEmail").value.trim(),password=document.getElementById("regPassword").value;
+ if(!email||!password)return authMsg("registerError","Nhập đầy đủ email và mật khẩu.");
+ if(password.length<6)return authMsg("registerError","Mật khẩu phải có ít nhất 6 ký tự.");
+ authMsg("registerError","Đang tạo tài khoản...");
+ const {data:r,error}=await supabaseClient.auth.signUp({email,password});
+ if(error)return authMsg("registerError",error.message);
+ if(r.session){await afterLogin(r.user)}else authMsg("registerError","Đăng ký thành công. Hãy kiểm tra email để xác nhận tài khoản rồi đăng nhập.");
 }
-function validDays(){
- const d=document.getElementById("day"), m=+document.getElementById("month").value, y=+document.getElementById("year").value, max=new Date(y,m,0).getDate();
- [...d.options].forEach(o=>o.hidden=+o.value>max);
- if(+d.value>max)d.value=max;
+async function login(){
+ const email=document.getElementById("authEmail").value.trim(),password=document.getElementById("authPassword").value;
+ if(!email||!password)return authMsg("authError","Nhập email và mật khẩu.");
+ authMsg("authError","Đang đăng nhập...");
+ const {data:r,error}=await supabaseClient.auth.signInWithPassword({email,password});
+ if(error)return authMsg("authError",error.message);
+ await afterLogin(r.user);
 }
-document.getElementById("month").addEventListener("change",validDays);
-document.getElementById("year").addEventListener("change",validDays);
-
-function addOrder(){
- const k=dateKey(), n=Number(document.getElementById("count").value);
- if(!n||n<1)return alert("Nhập số đơn hợp lệ!");
- const old=total(); data.orders[k]=(data.orders[k]||0)+n; save();
- document.getElementById("count").value=""; render();
- const reached=data.milestones.filter(g=>old<Number(g.orders)&&total()>=Number(g.orders)).sort((a,b)=>a.orders-b.orders);
- if(reached.length)celebrate(reached[0]);
+async function logout(){await supabaseClient.auth.signOut();currentUser=null;data={orders:{},milestones:[],note:""};document.getElementById("userbar").style.display="none";showAuth("login");}
+async function afterLogin(user){currentUser=user;document.getElementById("userEmail").textContent=user.email||"Đã đăng nhập";document.getElementById("userbar").style.display="flex";document.getElementById("authScreen").style.display="none";document.getElementById("registerScreen").style.display="none";await loadCloud();}
+async function loadCloud(){
+ const uid=currentUser.id;
+ const [o,g,n]=await Promise.all([
+  supabaseClient.from("orders").select("id,order_date,order_count,note").eq("user_id",uid).order("order_date",{ascending:false}),
+  supabaseClient.from("goals").select("id,title,target,reward,icon").eq("user_id",uid).order("target",{ascending:true}),
+  supabaseClient.from("app_notes").select("id,content").eq("user_id",uid).maybeSingle()
+ ]);
+ if(o.error||g.error||n.error){console.error(o.error,g.error,n.error);alert("Không tải được dữ liệu Supabase. Kiểm tra SQL/RLS rồi thử lại.");return;}
+ const local=localLoad();
+ data.orders={};(o.data||[]).forEach(x=>data.orders[x.order_date]=Number(x.order_count)||0);
+ data.milestones=(g.data||[]).map(x=>({id:x.id,orders:Number(x.target),icon:x.icon||"🎯",name:x.title||x.reward||"Mục tiêu"}));
+ data.note=n.data?.content||"";
+ if(!data.milestones.length){
+   data.milestones=defaultObjects();
+   for(const g0 of data.milestones){const {data:ins,error}=await supabaseClient.from("goals").insert({user_id:uid,title:g0.name,target:g0.orders,reward:g0.name,icon:g0.icon}).select("id").single();if(!error)g0.id=ins.id;}
+ }
+ // If this account has no cloud orders/notes yet, offer the existing browser data as a one-time migration.
+ const localHas=Object.keys(local.orders||{}).length>0 || (local.note||"").trim() || (Array.isArray(local.milestones)&&local.milestones.length>0);
+ const cloudEmpty=Object.keys(data.orders).length===0 && !(data.note||"").trim() && data.milestones.length<=defaultMilestones.length;
+ if(localHas&&cloudEmpty&&!sessionStorage.getItem("pod_migrated_"+uid)){
+   const use=confirm("Phát hiện dữ liệu tracker cũ trên trình duyệt này. Bạn có muốn đưa dữ liệu đó lên tài khoản Supabase không?");
+   if(use) await migrateLocal(local);
+   sessionStorage.setItem("pod_migrated_"+uid,"1");
+ }
+ localSave();document.getElementById("note").value=data.note||"";render();
 }
-function render(){
- const t=total();document.getElementById("total").textContent=t.toLocaleString();
- document.getElementById("bar").style.width=Math.min(t/100*100,100)+"%";
- document.getElementById("remaining").textContent=t>=100?"🎉 Đã đạt mục tiêu 100 đơn!":`Còn ${100-t} đơn tới mục tiêu 100 đơn`;
- renderHistory();renderGoals();
+async function migrateLocal(local){
+ const uid=currentUser.id;
+ for(const [date,count] of Object.entries(local.orders||{})){const {data:r,error}=await supabaseClient.from("orders").upsert({user_id:uid,order_date:date,order_count:Number(count)||0},{onConflict:"user_id,order_date"}).select().single();if(!error)data.orders[date]=Number(count)||0;}
+ if((local.note||"").trim()){await supabaseClient.from("app_notes").upsert({user_id:uid,content:local.note,updated_at:new Date().toISOString()},{onConflict:"user_id"});data.note=local.note;}
+ if(Array.isArray(local.milestones)&&local.milestones.length){const {data:existing}=await supabaseClient.from("goals").select("target").eq("user_id",uid);const existingTargets=new Set((existing||[]).map(x=>Number(x.target)));for(const g of local.milestones){if(!existingTargets.has(Number(g.orders)))await supabaseClient.from("goals").insert({user_id:uid,title:g.name,target:Number(g.orders),reward:g.name,icon:g.icon||"🎯"});}}
+ await loadCloud();
 }
-function renderHistory(){
- const h=document.getElementById("history"), ks=Object.keys(data.orders).sort().reverse();
- h.innerHTML=ks.length?ks.map(k=>`<tr><td>${k.split("-").reverse().join("/")}</td><td><b>${data.orders[k]}</b></td><td class="history-actions"><button class="history-menu-btn" onclick="toggleHistoryMenu('${k}',event)">⋮</button><div class="history-menu-box" id="history-menu-${k}"><button onclick="editOrder('${k}')">✏️ Chỉnh sửa ngày / số đơn</button><button class="del" onclick="deleteOrder('${k}')">🗑️ Xóa dữ liệu ngày</button></div></td></tr>`).join(""):`<tr><td colspan="3" class="empty">Chưa có dữ liệu đơn hàng.</td></tr>`;
+async function saveOrder(date,count){const {error}=await supabaseClient.from("orders").upsert({user_id:currentUser.id,order_date:date,order_count:Number(count)},{onConflict:"user_id,order_date"});if(error)throw error}
+async function deleteCloudOrder(date){const {error}=await supabaseClient.from("orders").delete().eq("user_id",currentUser.id).eq("order_date",date);if(error)throw error}
+async function saveNoteCloud(){const {error}=await supabaseClient.from("app_notes").upsert({user_id:currentUser.id,content:data.note||"",updated_at:new Date().toISOString()},{onConflict:"user_id"});if(error)console.error(error)}
+async function addOrder(){
+ const k=dateKey(),n=Number(document.getElementById("count").value);if(!n||n<1)return alert("Nhập số đơn hợp lệ!");
+ const old=total();data.orders[k]=(data.orders[k]||0)+n;localSave();
+ try{await saveOrder(k,data.orders[k]);document.getElementById("count").value="";render();const reached=data.milestones.filter(g=>old<Number(g.orders)&&total()>=Number(g.orders)).sort((a,b)=>a.orders-b.orders);if(reached.length)celebrate(reached[0]);}catch(e){data.orders[k]-=n;if(data.orders[k]<=0)delete data.orders[k];localSave();alert("Không lưu được lên Supabase: "+e.message)}
 }
-function renderGoals(){
- const box=document.getElementById("milestones"),t=total();
- const arr=[...data.milestones].sort((a,b)=>Number(a.orders)-Number(b.orders));
- box.innerHTML=arr.map(g=>{
-   const done=t>=g.orders, rem=Math.max(g.orders-t,0);
-   return `<div class="milestone ${done?"done":""}">
-   <div class="menu"><button onclick="toggleMenu('${g.id}',event)">⋮</button><div class="menu-box" id="menu-${g.id}">
-   <button onclick="editMilestone('${g.id}')">✏️ Chỉnh sửa mục tiêu</button>
-   <button class="del" onclick="deleteMilestone('${g.id}')">🗑️ Xóa mục tiêu</button></div></div>
-   <div class="micon">${g.icon}</div><div class="mnum">${done?"✓ ":""}${Number(g.orders).toLocaleString()} ĐƠN</div>
-   <div class="reward">${esc(g.name)}</div><div class="mremain">${done?"🎉 ĐÃ ĐẠT!":`Còn ${rem.toLocaleString()} đơn`}</div></div>`;
- }).join("");
-}
-function toggleMenu(id,e){
- if(e)e.stopPropagation();
- document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"));
- const el=document.getElementById("menu-"+id);if(el)el.classList.toggle("show");
-}
-function toggleHistoryMenu(id,e){
- if(e)e.stopPropagation();
- document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"));
- const el=document.getElementById("history-menu-"+id);if(el)el.classList.toggle("show");
-}
-function addGoal(){
- const orders=Number(document.getElementById("goalOrders").value),name=document.getElementById("goalName").value.trim(),icon=document.getElementById("selectedIcon").textContent;
- if(!orders||orders<1)return alert("Nhập mốc đơn hợp lệ!");
- if(!name)return alert("Nhập tên mục tiêu!");
- data.milestones.push({id:"g"+Date.now(),orders,name,icon});data.milestones.sort((a,b)=>a.orders-b.orders);save();
- document.getElementById("goalOrders").value="";document.getElementById("goalName").value="";document.getElementById("selectedIcon").textContent="🎯";render();
-}
-function editMilestone(id){
- const g=data.milestones.find(x=>x.id===id);if(!g)return;
- const o=prompt("Mốc đơn:",g.orders);if(o===null)return;
- const n=prompt("Tên mục tiêu / phần thưởng:",g.name);if(n===null)return;
- const ic=prompt("Icon (emoji), ví dụ 💍 hoặc 🎯:",g.icon);if(ic===null)return;
- if(!Number(o)||Number(o)<1||!n.trim()||!ic.trim())return alert("Thông tin không hợp lệ!");
- g.orders=Number(o);g.name=n.trim();g.icon=ic.trim();save();render();
-}
-function deleteMilestone(id){
- const g=data.milestones.find(x=>x.id===id);if(!g)return;
- if(confirm(`Xóa mục tiêu "${g.name}" (${Number(g.orders).toLocaleString()} đơn)?`)){data.milestones=data.milestones.filter(x=>x.id!==id);save();render();}
-}
-function editOrder(oldKey){
- const oldCount=Number(data.orders[oldKey]||0);
- let newDate=prompt("Ngày mới (YYYY-MM-DD):",oldKey);if(newDate===null)return;
- newDate=newDate.trim().replaceAll("/","-");
- const m=newDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
- if(!m)return alert("Ngày không hợp lệ. Hãy nhập dạng YYYY-MM-DD, ví dụ 2026-10-09.");
- const y=Number(m[1]),mo=Number(m[2]),d=Number(m[3]),dt=new Date(y,mo-1,d);
- if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d)return alert("Ngày không tồn tại!");
- newDate=`${y}-${pad(mo)}-${pad(d)}`;
- const newCount=Number(prompt("Số đơn:",oldCount));
- if(!newCount||newCount<1)return alert("Số đơn không hợp lệ!");
- delete data.orders[oldKey];data.orders[newDate]=(data.orders[newDate]||0)+newCount;save();render();
-}
-function deleteOrder(key){
- if(confirm(`Xóa dữ liệu ngày ${key.split("-").reverse().join("/")} (${data.orders[key]} đơn)?`)){delete data.orders[key];save();render();}
-}
-
-function toggleIcons(){document.getElementById("iconPanel").classList.toggle("show");renderIcons();}
-function renderIcons(){
- const q=document.getElementById("iconSearch").value.toLowerCase().trim(),list=document.getElementById("iconList");
- list.innerHTML=Object.entries(icons).filter(([n])=>!q||n.includes(q)).map(([n,i])=>`<button class="icon-item" title="${n}" onclick="pickIcon('${i}')">${i}</button>`).join("");
-}
-function pickIcon(i){document.getElementById("selectedIcon").textContent=i;document.getElementById("iconPanel").classList.remove("show");}
-document.addEventListener("click",e=>{if(!e.target.closest(".icon-picker"))document.getElementById("iconPanel").classList.remove("show");if(!e.target.closest(".menu")&&!e.target.closest(".history-actions"))document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"));});
-
-document.getElementById("note").value=data.note||"";
-document.getElementById("note").addEventListener("input",e=>{data.note=e.target.value;save()});
-
-function celebrate(g){
- document.getElementById("congratsText").innerHTML=`<div style="font-size:28px">${g.icon}</div><b>${Number(g.orders).toLocaleString()} ĐƠN</b><br><br>${esc(g.name)}<br><br>🔥 Mày đã chạm tới mục tiêu này!`;
- document.getElementById("congrats").style.display="block";fireworks();
-}
-function fireworks(){
- const c=document.getElementById("fireworks"),colors=["#ffcf40","#ff5b5b","#54d8ff","#ff7ee5","#7dff7d","#fff"];
- c.innerHTML="";
- for(let b=0;b<6;b++)setTimeout(()=>{
-   const cx=10+Math.random()*80,cy=10+Math.random()*55;
-   for(let i=0;i<55;i++){const p=document.createElement("div"),a=Math.random()*Math.PI*2,dist=60+Math.random()*240;p.className="particle";p.style.left=cx+"%";p.style.top=cy+"%";p.style.setProperty("--x",Math.cos(a)*dist+"px");p.style.setProperty("--y",Math.sin(a)*dist+"px");p.style.background=colors[Math.floor(Math.random()*colors.length)];c.appendChild(p);setTimeout(()=>p.remove(),1500)}
- },b*280);
-}
+function render(){const t=total();document.getElementById("total").textContent=t.toLocaleString();document.getElementById("bar").style.width=Math.min(t/100*100,100)+"%";document.getElementById("remaining").textContent=t>=100?"🎉 Đã đạt mục tiêu 100 đơn!":`Còn ${100-t} đơn tới mục tiêu 100 đơn`;renderHistory();renderGoals()}
+function renderHistory(){const h=document.getElementById("history"),ks=Object.keys(data.orders).sort().reverse();h.innerHTML=ks.length?ks.map(k=>`<tr><td>${k.split("-").reverse().join("/")}</td><td><b>${data.orders[k]}</b></td><td class="history-actions"><button class="history-menu-btn" onclick="toggleHistoryMenu('${k}',event)">⋮</button><div class="history-menu-box" id="history-menu-${k}"><button onclick="editOrder('${k}')">✏️ Chỉnh sửa ngày / số đơn</button><button class="del" onclick="deleteOrder('${k}')">🗑️ Xóa dữ liệu ngày</button></div></td></tr>`).join(""):`<tr><td colspan="3" class="empty">Chưa có dữ liệu đơn hàng.</td></tr>`}
+function renderGoals(){const box=document.getElementById("milestones"),t=total(),arr=[...data.milestones].sort((a,b)=>Number(a.orders)-Number(b.orders));box.innerHTML=arr.map(g=>{const done=t>=g.orders,rem=Math.max(g.orders-t,0);return `<div class="milestone ${done?"done":""}"><div class="menu"><button onclick="toggleMenu('${g.id}',event)">⋮</button><div class="menu-box" id="menu-${g.id}"><button onclick="editMilestone('${g.id}')">✏️ Chỉnh sửa mục tiêu</button><button class="del" onclick="deleteMilestone('${g.id}')">🗑️ Xóa mục tiêu</button></div></div><div class="micon">${g.icon}</div><div class="mnum">${done?"✓ ":""}${Number(g.orders).toLocaleString()} ĐƠN</div><div class="reward">${esc(g.name)}</div><div class="mremain">${done?"🎉 ĐÃ ĐẠT!":`Còn ${rem.toLocaleString()} đơn`}</div></div>`}).join("")}
+function toggleMenu(id,e){if(e)e.stopPropagation();document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"));const el=document.getElementById("menu-"+id);if(el)el.classList.toggle("show")}
+function toggleHistoryMenu(id,e){if(e)e.stopPropagation();document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"));const el=document.getElementById("history-menu-"+id);if(el)el.classList.toggle("show")}
+async function addGoal(){const orders=Number(document.getElementById("goalOrders").value),name=document.getElementById("goalName").value.trim(),icon=document.getElementById("selectedIcon").textContent;if(!orders||orders<1)return alert("Nhập mốc đơn hợp lệ!");if(!name)return alert("Nhập tên mục tiêu!");const {data:r,error}=await supabaseClient.from("goals").insert({user_id:currentUser.id,title:name,target:orders,reward:name,icon}).select().single();if(error)return alert("Không lưu được mục tiêu: "+error.message);data.milestones.push({id:r.id,orders,name,icon});data.milestones.sort((a,b)=>a.orders-b.orders);localSave();document.getElementById("goalOrders").value="";document.getElementById("goalName").value="";document.getElementById("selectedIcon").textContent="🎯";render()}
+async function editMilestone(id){const g=data.milestones.find(x=>String(x.id)===String(id));if(!g)return;const o=prompt("Mốc đơn:",g.orders);if(o===null)return;const n=prompt("Tên mục tiêu / phần thưởng:",g.name);if(n===null)return;const ic=prompt("Icon (emoji), ví dụ 💍 hoặc 🎯:",g.icon);if(ic===null)return;if(!Number(o)||Number(o)<1||!n.trim()||!ic.trim())return alert("Thông tin không hợp lệ!");if(!g.id)return alert("Mục tiêu mặc định chưa đồng bộ được lên Supabase.");const {error}=await supabaseClient.from("goals").update({target:Number(o),title:n.trim(),reward:n.trim(),icon:ic.trim()}).eq("id",g.id).eq("user_id",currentUser.id);if(error)return alert("Không sửa được mục tiêu: "+error.message);g.orders=Number(o);g.name=n.trim();g.icon=ic.trim();localSave();render()}
+async function deleteMilestone(id){const g=data.milestones.find(x=>String(x.id)===String(id));if(!g)return;if(confirm(`Xóa mục tiêu "${g.name}" (${Number(g.orders).toLocaleString()} đơn)?`)){if(!g.id)return alert("Mục tiêu này chưa có ID Supabase.");const {error}=await supabaseClient.from("goals").delete().eq("id",g.id).eq("user_id",currentUser.id);if(error)return alert("Không xóa được mục tiêu: "+error.message);data.milestones=data.milestones.filter(x=>String(x.id)!==String(id));localSave();render()}}
+async function editOrder(oldKey){const oldCount=Number(data.orders[oldKey]||0);let newDate=prompt("Ngày mới (YYYY-MM-DD):",oldKey);if(newDate===null)return;newDate=newDate.trim().replaceAll("/","-");const m=newDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(!m)return alert("Ngày không hợp lệ. Hãy nhập dạng YYYY-MM-DD, ví dụ 2026-10-09.");const y=Number(m[1]),mo=Number(m[2]),d=Number(m[3]),dt=new Date(y,mo-1,d);if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d)return alert("Ngày không tồn tại!");newDate=`${y}-${pad(mo)}-${pad(d)}`;const newCount=Number(prompt("Số đơn:",oldCount));if(!newCount||newCount<1)return alert("Số đơn không hợp lệ!");try{await deleteCloudOrder(oldKey);data.orders[newDate]=(data.orders[newDate]||0)+newCount;await saveOrder(newDate,data.orders[newDate]);if(oldKey!==newDate)delete data.orders[oldKey];localSave();render()}catch(e){alert("Không cập nhật được: "+e.message);await loadCloud()}}
+async function deleteOrder(key){if(confirm(`Xóa dữ liệu ngày ${key.split("-").reverse().join("/")} (${data.orders[key]} đơn)?`)){try{await deleteCloudOrder(key);delete data.orders[key];localSave();render()}catch(e){alert("Không xóa được: "+e.message)}}}
+function toggleIcons(){document.getElementById("iconPanel").classList.toggle("show");renderIcons()}
+function renderIcons(){const q=document.getElementById("iconSearch").value.toLowerCase().trim(),list=document.getElementById("iconList");list.innerHTML=Object.entries(icons).filter(([n])=>!q||n.includes(q)).map(([n,i])=>`<button class="icon-item" title="${n}" onclick="pickIcon('${i}')">${i}</button>`).join("")}
+function pickIcon(i){document.getElementById("selectedIcon").textContent=i;document.getElementById("iconPanel").classList.remove("show")}
+document.addEventListener("click",e=>{if(!e.target.closest(".icon-picker"))document.getElementById("iconPanel").classList.remove("show");if(!e.target.closest(".menu")&&!e.target.closest(".history-actions"))document.querySelectorAll(".menu-box,.history-menu-box").forEach(x=>x.classList.remove("show"))});
+document.getElementById("note").addEventListener("input",e=>{data.note=e.target.value;localSave();clearTimeout(window.noteTimer);window.noteTimer=setTimeout(saveNoteCloud,600)});
+function celebrate(g){document.getElementById("congratsText").innerHTML=`<div style="font-size:28px">${g.icon}</div><b>${Number(g.orders).toLocaleString()} ĐƠN</b><br><br>${esc(g.name)}<br><br>🔥 Mày đã chạm tới mục tiêu này!`;document.getElementById("congrats").style.display="block";fireworks()}
+function fireworks(){const c=document.getElementById("fireworks"),colors=["#ffcf40","#ff5b5b","#54d8ff","#ff7ee5","#7dff7d","#fff"];c.innerHTML="";for(let b=0;b<6;b++)setTimeout(()=>{const cx=10+Math.random()*80,cy=10+Math.random()*55;for(let i=0;i<55;i++){const p=document.createElement("div"),a=Math.random()*Math.PI*2,dist=60+Math.random()*240;p.className="particle";p.style.left=cx+"%";p.style.top=cy+"%";p.style.setProperty("--x",Math.cos(a)*dist+"px");p.style.setProperty("--y",Math.sin(a)*dist+"px");p.style.background=colors[Math.floor(Math.random()*colors.length)];c.appendChild(p);setTimeout(()=>p.remove(),1500)}},b*280)}
 function closeCongrats(){document.getElementById("congrats").style.display="none";document.getElementById("fireworks").innerHTML=""}
-function clearOrders(){if(confirm("Xóa toàn bộ lịch sử đơn hàng?")){data.orders={};save();render()}}
-function backup(){
- const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="POD-Goal-Backup.json";a.click();
-}
-function restore(){
- const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=e=>{const r=new FileReader();r.onload=x=>{try{data=JSON.parse(x.target.result);save();document.getElementById("note").value=data.note||"";render();alert("Khôi phục thành công!")}catch{alert("File backup không hợp lệ!")}};r.readAsText(e.target.files[0])};i.click();
-}
-function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
-setupDates();validDays();render();renderIcons();loadRemote();
+async function clearOrders(){if(confirm("Xóa toàn bộ lịch sử đơn hàng?")){const {error}=await supabaseClient.from("orders").delete().eq("user_id",currentUser.id);if(error)return alert("Không xóa được: "+error.message);data.orders={};localSave();render()}}
+function backup(){const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="POD-Goal-Backup.json";a.click()}
+async function restore(){const i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=e=>{const r=new FileReader();r.onload=async x=>{try{const imported=JSON.parse(x.target.result);if(imported.orders){for(const [date,count] of Object.entries(imported.orders))await saveOrder(date,Number(count)||0)}if(imported.note!==undefined){data.note=imported.note;await saveNoteCloud()}if(Array.isArray(imported.milestones)){for(const g of imported.milestones){if(Number(g.orders)>0)await supabaseClient.from("goals").insert({user_id:currentUser.id,title:g.name||"Mục tiêu",target:Number(g.orders),reward:g.name||"Mục tiêu",icon:g.icon||"🎯"})}}await loadCloud();alert("Khôi phục thành công!")}catch(err){alert("File backup không hợp lệ hoặc lỗi Supabase: "+err.message)}};r.readAsText(e.target.files[0])};i.click()}
+function esc(s){const d=document.createElement("div");d.textContent=s??"";return d.innerHTML}
+function setupDates(){const now=new Date(),d=document.getElementById("day"),m=document.getElementById("month"),y=document.getElementById("year");for(let i=1;i<=31;i++)d.innerHTML+=`<option value="${i}">${i}</option>`;for(let i=1;i<=12;i++)m.innerHTML+=`<option value="${i}">${i}</option>`;for(let i=2020;i<=2040;i++)y.innerHTML+=`<option value="${i}">${i}</option>`;d.value=now.getDate();m.value=now.getMonth()+1;y.value=now.getFullYear()}
+function validDays(){const d=document.getElementById("day"),m=+document.getElementById("month").value,y=+document.getElementById("year").value,max=new Date(y,m,0).getDate();[...d.options].forEach(o=>o.hidden=+o.value>max);if(+d.value>max)d.value=max}
+document.getElementById("month").addEventListener("change",validDays);document.getElementById("year").addEventListener("change",validDays);
+async function boot(){setupDates();validDays();renderIcons();const {data:r}=await supabaseClient.auth.getSession();if(r.session)await afterLogin(r.session.user);else showAuth("login")}
+supabaseClient.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_OUT")showAuth("login")});
+boot();
 </script>
 </body>
 </html>

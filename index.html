@@ -1,0 +1,400 @@
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hải Vân ♡</title>
+
+<style>
+*{box-sizing:border-box}
+html,body{
+  margin:0;width:100%;height:100%;
+  background:#050307;color:white;
+  overflow:hidden;font-family:Arial,sans-serif
+}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#rain{z-index:1}
+#flowers{z-index:2;pointer-events:none}
+#digits{z-index:12;pointer-events:none}
+
+#intro{
+  position:fixed;inset:0;z-index:10;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;padding:20px;
+  background:radial-gradient(circle,#250c1b,#050307 75%);
+  transition:opacity .8s
+}
+#intro h1{
+  color:#ffeaf3;font-size:clamp(24px,5vw,42px);
+  text-shadow:0 0 20px #ffb6d5
+}
+#intro p{color:#ffc8df;line-height:1.8}
+button{
+  padding:14px 30px;border-radius:30px;
+  border:1px solid #fff0f7;background:#ffe0ed;
+  color:#4b1730;font-weight:bold;font-size:17px;
+  cursor:pointer;box-shadow:0 0 20px #ffb6d5
+}
+#count{
+  display:none;font-size:100px;font-weight:bold;
+  color:#fff0f7;text-shadow:0 0 25px #ff75b6
+}
+#message{
+  position:fixed;z-index:4;top:50%;left:5%;width:90%;
+  transform:translateY(-50%);
+  text-align:center;font-weight:bold;
+  font-size:clamp(25px,5vw,48px);
+  line-height:1.5;color:#fff7fb;
+  text-shadow:0 0 8px #ffb6d5,0 0 22px #ff8cbd;
+  opacity:0;transition:opacity 1s;
+  pointer-events:none
+}
+#message.show{opacity:1}
+#ending{
+  position:fixed;z-index:6;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  opacity:0;transition:opacity 2s;
+  pointer-events:none
+}
+#ending.show{opacity:1}
+#heart{
+  font-size:clamp(100px,20vw,180px);
+  color:#ffb6d5;text-shadow:0 0 15px white,0 0 45px #ff8cbd;
+  animation:beat 1.5s infinite
+}
+#name{
+  font-size:clamp(32px,7vw,64px);
+  letter-spacing:6px;font-weight:bold;
+  color:#fff7fb;text-shadow:0 0 20px #ffb6d5
+}
+#sub{margin-top:15px;color:#ffe0ed;letter-spacing:3px}
+@keyframes beat{50%{transform:scale(1.1)}}
+</style>
+</head>
+
+<body>
+<canvas id="rain"></canvas>
+<canvas id="flowers"></canvas>
+<canvas id="digits"></canvas>
+
+<div id="intro">
+  <h1>Dành Riêng Cho Hải Vân</h1>
+  <p>Hãy xoay ngang điện thoại nhé ♡<br>
+  Có một điều em muốn nói với chị...</p>
+  <button id="start">BẮT ĐẦU ♡</button>
+  <div id="count"></div>
+</div>
+
+<div id="message"></div>
+
+<div id="ending">
+  <div id="heart">♡</div>
+  <div id="name">HẢI VÂN</div>
+  <div id="sub">I LOVE YOU ♡</div>
+</div>
+
+<script>
+const rain=document.getElementById("rain");
+const r=rain.getContext("2d");
+const flowers=document.getElementById("flowers");
+const fctx=flowers.getContext("2d");
+const digits=document.getElementById("digits");
+const dctx=digits.getContext("2d");
+
+let W,H,DPR=Math.min(devicePixelRatio||1,2);
+let words=[];
+const colors=["#ffffff","#fff0f7","#ffd0e3","#ff9fc8","#ff76b2"];
+
+function sizeCanvas(c,ctx){
+  c.width=innerWidth*DPR;
+  c.height=innerHeight*DPR;
+  c.style.width=innerWidth+"px";
+  c.style.height=innerHeight+"px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+function resize(){
+  W=innerWidth;H=innerHeight;
+  sizeCanvas(rain,r);
+  sizeCanvas(flowers,fctx);
+  sizeCanvas(digits,dctx);
+
+  // Tăng mật độ chữ I LOVE YOU
+  words=Array.from({
+    length:Math.min(400,Math.floor(W*H/1800))
+  },()=>({
+    x:Math.random()*W,
+    y:Math.random()*H,
+    speed:.7+Math.random()*2.8,
+    alpha:.25+Math.random()*.75,
+    size:10+Math.random()*5,
+    heart:Math.random()<.08
+  }));
+}
+window.addEventListener("resize",resize);
+resize();
+
+// ===== MƯA CHỮ I LOVE YOU DÀY ĐẶC =====
+function rainLoop(){
+  r.clearRect(0,0,W,H);
+
+  words.forEach(p=>{
+    r.globalAlpha=p.alpha;
+    r.fillStyle=Math.random()>.5?"#fff5fa":"#ff9fc8";
+    r.font="bold "+p.size+"px Arial";
+    r.shadowColor="#ffb6d5";
+    r.shadowBlur=6;
+    r.fillText(p.heart?"♡":"I LOVE YOU",p.x,p.y);
+
+    p.y+=p.speed;
+
+    if(p.y>H+25){
+      p.y=-20;
+      p.x=Math.random()*W;
+    }
+  });
+
+  r.globalAlpha=1;
+  r.shadowBlur=0;
+  requestAnimationFrame(rainLoop);
+}
+rainLoop();
+
+// ===== LẤY ĐIỂM ĐỂ VẼ SỐ =====
+function getDigitPoints(n){
+  const temp=document.createElement("canvas");
+  temp.width=W;temp.height=H;
+  const c=temp.getContext("2d");
+
+  const fontSize=Math.min(W*.38,H*.65,190);
+  c.fillStyle="white";
+  c.font="bold "+fontSize+"px Arial";
+  c.textAlign="center";
+  c.textBaseline="middle";
+  c.fillText(String(n),W/2,H/2);
+
+  const data=c.getImageData(0,0,W,H).data;
+  const pts=[];
+
+  for(let y=0;y<H;y+=4){
+    for(let x=0;x<W;x+=4){
+      if(data[(y*W+x)*4+3]>100){
+        pts.push({x,y});
+      }
+    }
+  }
+  return pts;
+}
+
+// ===== VẼ CÁNH HOA HỒNG NHỎ =====
+function drawPetal(ctx,p){
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  ctx.rotate(p.a);
+  ctx.fillStyle=p.color;
+  ctx.shadowColor=p.color;
+  ctx.shadowBlur=7;
+  ctx.beginPath();
+  ctx.ellipse(0,0,p.s,p.s*.48,0,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Bung số cũ rồi ghép thành số mới
+function transitionDigit(from,to){
+  return new Promise(resolve=>{
+    const A=getDigitPoints(from);
+    const B=getDigitPoints(to);
+    const count=Math.max(A.length,B.length);
+    const parts=[];
+
+    for(let i=0;i<count;i++){
+      const a=A[Math.floor(i*A.length/count)]||
+        {x:W/2,y:H/2};
+      const b=B[Math.floor(i*B.length/count)]||
+        {x:W/2,y:H/2};
+
+      const angle=Math.random()*Math.PI*2;
+      const speed=3+Math.random()*9;
+
+      parts.push({
+        x:a.x,y:a.y,ox:a.x,oy:a.y,
+        tx:b.x,ty:b.y,
+        vx:Math.cos(angle)*speed,
+        vy:Math.sin(angle)*speed,
+        s:1+Math.random()*2.2,
+        a:angle,
+        color:colors[Math.floor(Math.random()*colors.length)]
+      });
+    }
+
+    let frame=0;
+
+    function draw(){
+      dctx.clearRect(0,0,W,H);
+      frame++;
+
+      parts.forEach(p=>{
+        if(frame<38){
+          // Cánh hoa bung ra khỏi số
+          p.x+=p.vx;
+          p.y+=p.vy;
+          p.vx*=.97;
+          p.vy*=.97;
+        }else{
+          // Cánh hoa tụ lại thành số tiếp theo
+          const t=Math.min(1,(frame-38)/65);
+          const ease=1-Math.pow(1-t,3);
+
+          p.x=p.ox+(p.tx-p.ox)*ease+p.vx*(1-t)*3;
+          p.y=p.oy+(p.ty-p.oy)*ease+p.vy*(1-t)*3;
+        }
+
+        p.a+=.06;
+        drawPetal(dctx,p);
+      });
+
+      if(frame<108){
+        requestAnimationFrame(draw);
+      }else{
+        dctx.clearRect(0,0,W,H);
+        resolve();
+      }
+    }
+    draw();
+  });
+}
+
+// ===== CÁNH HOA GHÉP THÀNH TRÁI TIM =====
+let heartPetals=[];
+let flowerStage="idle";
+let flowerFrame=0;
+
+function makeHeart(){
+  heartPetals=[];
+
+  const scale=Math.min(W/38,H/32,13);
+  const cx=W/2,cy=H/2;
+  const count=Math.min(600,Math.max(260,Math.floor(W*H/1400)));
+
+  for(let i=0;i<count;i++){
+    const t=Math.random()*Math.PI*2;
+    const x=16*Math.pow(Math.sin(t),3)*scale;
+    const y=-(13*Math.cos(t)-5*Math.cos(2*t)
+      -2*Math.cos(3*t)-Math.cos(4*t))*scale;
+
+    heartPetals.push({
+      x:Math.random()*W,
+      y:Math.random()*H,
+      tx:cx+x,ty:cy+y,
+      vx:(Math.random()-.5)*18,
+      vy:(Math.random()-.5)*18,
+      s:1.5+Math.random()*3,
+      a:Math.random()*6,
+      color:colors[Math.floor(Math.random()*colors.length)]
+    });
+  }
+}
+
+function flowerLoop(){
+  fctx.clearRect(0,0,W,H);
+  flowerFrame++;
+
+  if(flowerStage!=="idle"){
+    heartPetals.forEach(p=>{
+      if(flowerStage==="burst"){
+        p.x+=p.vx;
+        p.y+=p.vy;
+        p.vx*=.98;
+        p.vy*=.98;
+      }else{
+        p.x+=(p.tx-p.x)*.045;
+        p.y+=(p.ty-p.y)*.045;
+      }
+
+      p.a+=.025;
+      drawPetal(fctx,p);
+    });
+
+    if(flowerStage==="burst"&&flowerFrame>75){
+      flowerStage="assemble";
+      flowerFrame=0;
+    }
+  }
+
+  requestAnimationFrame(flowerLoop);
+}
+flowerLoop();
+
+// ===== CHẠY HIỆU ỨNG =====
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+let started=false;
+
+document.getElementById("start").onclick=async()=>{
+  if(started)return;
+  started=true;
+
+  const intro=document.getElementById("intro");
+  const count=document.getElementById("count");
+  const button=document.getElementById("start");
+
+  // Đưa nền giới thiệu trong suốt để nhìn thấy số và mưa chữ
+  intro.style.background="transparent";
+  intro.querySelector("h1").style.display="none";
+  intro.querySelector("p").style.display="none";
+  button.style.display="none";
+  count.style.display="none";
+
+  try{
+    if(screen.orientation&&screen.orientation.lock){
+      await screen.orientation.lock("landscape");
+    }
+  }catch(e){}
+
+  // Số 3 xuất hiện rõ ràng trước khi bung cánh hoa
+  await transitionDigit(3,3);
+  await sleep(250);
+
+  // 3 bung ra rồi ghép thành 2
+  await transitionDigit(3,2);
+  await sleep(250);
+
+  // 2 bung ra rồi ghép thành 1
+  await transitionDigit(2,1);
+  await sleep(450);
+
+  dctx.clearRect(0,0,W,H);
+  intro.style.opacity="0";
+  await sleep(850);
+  intro.style.display="none";
+
+  // Bung hoa rồi nhập lại thành trái tim
+  makeHeart();
+  flowerStage="burst";
+  flowerFrame=0;
+
+  const msg=document.getElementById("message");
+  const lines=[
+    "Em muốn tiến xa hơn",
+    "Trong Mối Quan Hệ Này",
+    "Chị Đồng Ý",
+    "Làm Bạn Gái Em Nhé ♡"
+  ];
+
+  for(const line of lines){
+    msg.textContent=line;
+    msg.classList.add("show");
+    await sleep(2400);
+    msg.classList.remove("show");
+    await sleep(850);
+  }
+
+  document.getElementById("ending").classList.add("show");
+};
+</script>
+</body>
+</html>
+```
